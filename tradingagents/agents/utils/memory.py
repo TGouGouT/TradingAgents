@@ -5,19 +5,64 @@ from openai import OpenAI
 
 class FinancialSituationMemory:
     def __init__(self, name, config):
-        if config["backend_url"] == "http://localhost:11434/v1":
+        self.llm_provider = config.get("llm_provider", "").lower()
+        embedding_model = config.get("embedding_model")
+        if embedding_model:
+            self.embedding = embedding_model
+        elif config["backend_url"] == "http://localhost:11434/v1":
             self.embedding = "nomic-embed-text"
         else:
             self.embedding = "text-embedding-3-small"
+        self.max_embedding_chars = int(config.get("embedding_max_chars", 8000))
+        self.summary_model = config.get("embedding_summary_model") or config.get(
+            "quick_think_llm", ""
+        )
         self.client = OpenAI(base_url=config["backend_url"])
         self.chroma_client = chromadb.Client(Settings(allow_reset=True))
         self.situation_collection = self.chroma_client.create_collection(name=name)
 
+    def _truncate_text(self, text):
+        if len(text) <= self.max_embedding_chars:
+            return text
+        separator = "\n...\n"
+        half = max((self.max_embedding_chars - len(separator)) // 2, 0)
+        return f"{text[:half]}{separator}{text[-half:]}"
+
+    def _summarize_text(self, text):
+        if not self.summary_model:
+            return text
+        system_prompt = (
+            "Summarize the trading context for semantic retrieval. "
+            "Keep tickers, dates, decisions, and key signals. "
+            f"Return a concise summary under {self.max_embedding_chars} characters."
+        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.summary_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text},
+                ],
+                temperature=0.2,
+            )
+            summary = response.choices[0].message.content or ""
+            return summary.strip() or text
+        except Exception:
+            return text
+
+    def _prepare_text_for_embedding(self, text):
+        if self.llm_provider != "ollama":
+            return text
+        if len(text) > self.max_embedding_chars:
+            summarized = self._summarize_text(text)
+            return self._truncate_text(summarized)
+        return text
+
     def get_embedding(self, text):
         """Get OpenAI embedding for a text"""
-        
+        truncated = self._prepare_text_for_embedding(text)
         response = self.client.embeddings.create(
-            model=self.embedding, input=text
+            model=self.embedding, input=truncated
         )
         return response.data[0].embedding
 
