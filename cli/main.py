@@ -1,4 +1,5 @@
 from typing import Optional
+import os
 import datetime
 import typer
 from pathlib import Path
@@ -467,10 +468,10 @@ def get_user_selections():
     )
     selected_research_depth = select_research_depth()
 
-    # Step 5: OpenAI backend
+    # Step 5: LLM provider
     console.print(
         create_question_box(
-            "Step 5: OpenAI backend", "Select which service to talk to"
+            "Step 5: LLM Provider", "Select which LLM service to talk to"
         )
     )
     selected_llm_provider, backend_url = select_llm_provider()
@@ -481,8 +482,22 @@ def get_user_selections():
             "Step 6: Thinking Agents", "Select your thinking agents for analysis"
         )
     )
-    selected_shallow_thinker = select_shallow_thinking_agent(selected_llm_provider)
-    selected_deep_thinker = select_deep_thinking_agent(selected_llm_provider)
+    if selected_llm_provider.lower() == "ollama":
+        default_quick = os.getenv("TRADINGAGENTS_QUICK_THINK_LLM")
+        default_deep = os.getenv("TRADINGAGENTS_DEEP_THINK_LLM")
+        selected_shallow_thinker = select_ollama_model("Quick-Thinking", default_quick)
+        selected_deep_thinker = select_ollama_model("Deep-Thinking", default_deep)
+        update_env_file(
+            {
+                "TRADINGAGENTS_LLM_PROVIDER": "ollama",
+                "TRADINGAGENTS_BACKEND_URL": backend_url,
+                "TRADINGAGENTS_QUICK_THINK_LLM": selected_shallow_thinker,
+                "TRADINGAGENTS_DEEP_THINK_LLM": selected_deep_thinker,
+            }
+        )
+    else:
+        selected_shallow_thinker = select_shallow_thinking_agent(selected_llm_provider)
+        selected_deep_thinker = select_deep_thinking_agent(selected_llm_provider)
 
     return {
         "ticker": selected_ticker,
@@ -768,7 +783,7 @@ def run_analysis():
             func(*args, **kwargs)
             timestamp, message_type, content = obj.messages[-1]
             content = content.replace("\n", " ")  # Replace newlines with spaces
-            with open(log_file, "a") as f:
+            with open(log_file, "a", encoding="utf-8", errors="replace") as f:
                 f.write(f"{timestamp} [{message_type}] {content}\n")
         return wrapper
     
@@ -779,7 +794,7 @@ def run_analysis():
             func(*args, **kwargs)
             timestamp, tool_name, args = obj.tool_calls[-1]
             args_str = ", ".join(f"{k}={v}" for k, v in args.items())
-            with open(log_file, "a") as f:
+            with open(log_file, "a", encoding="utf-8", errors="replace") as f:
                 f.write(f"{timestamp} [Tool Call] {tool_name}({args_str})\n")
         return wrapper
 
@@ -792,7 +807,7 @@ def run_analysis():
                 content = obj.report_sections[section_name]
                 if content:
                     file_name = f"{section_name}.md"
-                    with open(report_dir / file_name, "w") as f:
+                    with open(report_dir / file_name, "w", encoding="utf-8", errors="replace") as f:
                         f.write(content)
         return wrapper
 
