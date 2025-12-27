@@ -1,3 +1,7 @@
+import os
+import subprocess
+from pathlib import Path
+
 import questionary
 from typing import List, Optional, Tuple, Dict
 
@@ -155,11 +159,19 @@ def select_shallow_thinking_agent(provider) -> str:
         ]
     }
 
+    if provider.lower() == "ollama":
+        default_model = os.getenv("TRADINGAGENTS_QUICK_THINK_LLM")
+        return select_ollama_model("Quick-Thinking", default_model)
+
+    options = SHALLOW_AGENT_OPTIONS[provider.lower()]
+    default_model = os.getenv("TRADINGAGENTS_QUICK_THINK_LLM")
+    options = reorder_model_options(options, default_model)
+
     choice = questionary.select(
         "Select Your [Quick-Thinking LLM Engine]:",
         choices=[
             questionary.Choice(display, value=value)
-            for display, value in SHALLOW_AGENT_OPTIONS[provider.lower()]
+            for display, value in options
         ],
         instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
         style=questionary.Style(
@@ -216,12 +228,20 @@ def select_deep_thinking_agent(provider) -> str:
             ("qwen3", "qwen3"),
         ]
     }
+
+    if provider.lower() == "ollama":
+        default_model = os.getenv("TRADINGAGENTS_DEEP_THINK_LLM")
+        return select_ollama_model("Deep-Thinking", default_model)
+
+    options = DEEP_AGENT_OPTIONS[provider.lower()]
+    default_model = os.getenv("TRADINGAGENTS_DEEP_THINK_LLM")
+    options = reorder_model_options(options, default_model)
     
     choice = questionary.select(
         "Select Your [Deep-Thinking LLM Engine]:",
         choices=[
             questionary.Choice(display, value=value)
-            for display, value in DEEP_AGENT_OPTIONS[provider.lower()]
+            for display, value in options
         ],
         instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
         style=questionary.Style(
@@ -240,8 +260,8 @@ def select_deep_thinking_agent(provider) -> str:
     return choice
 
 def select_llm_provider() -> tuple[str, str]:
-    """Select the OpenAI api url using interactive selection."""
-    # Define OpenAI api options with their corresponding endpoints
+    """Select the LLM provider and base URL using interactive selection."""
+    # Define LLM provider options with their corresponding endpoints
     BASE_URLS = [
         ("OpenAI", "https://api.openai.com/v1"),
         ("Anthropic", "https://api.anthropic.com/"),
@@ -250,11 +270,22 @@ def select_llm_provider() -> tuple[str, str]:
         ("Ollama", "http://localhost:11434/v1"),        
     ]
     
+    default_provider = os.getenv("TRADINGAGENTS_LLM_PROVIDER", "").lower()
+    options = BASE_URLS[:]
+    if default_provider:
+        for i, (display, url) in enumerate(options):
+            if display.lower() == default_provider:
+                options.insert(0, options.pop(i))
+                break
+
     choice = questionary.select(
         "Select your LLM Provider:",
         choices=[
-            questionary.Choice(display, value=(display, value))
-            for display, value in BASE_URLS
+            questionary.Choice(
+                f"{display} (from .env)" if display.lower() == default_provider else display,
+                value=(display, value),
+            )
+            for display, value in options
         ],
         instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
         style=questionary.Style(
@@ -267,10 +298,125 @@ def select_llm_provider() -> tuple[str, str]:
     ).ask()
     
     if choice is None:
-        console.print("\n[red]no OpenAI backend selected. Exiting...[/red]")
+        console.print("\n[red]no LLM backend selected. Exiting...[/red]")
         exit(1)
     
     display_name, url = choice
     print(f"You selected: {display_name}\tURL: {url}")
     
     return display_name, url
+
+
+def reorder_model_options(options, default_model):
+    """Move the default model to the top of the list if present."""
+    if not default_model:
+        return options
+    for i, (display, value) in enumerate(options):
+        if value == default_model:
+            default_display = f"{display} (from .env)"
+            return [(default_display, value)] + [
+                option for j, option in enumerate(options) if j != i
+            ]
+    return options
+
+
+def get_ollama_models() -> List[str]:
+    """Return available Ollama model names from `ollama list`."""
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return []
+
+    models = []
+    for line in result.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.lower().startswith("name"):
+            continue
+        models.append(stripped.split()[0])
+    return models
+
+
+def select_ollama_model(role_label: str, default_model: Optional[str] = None) -> str:
+    """Select an Ollama model from the local registry or via manual input."""
+    models = get_ollama_models()
+    if models:
+        if default_model and default_model in models:
+            models = [default_model] + [m for m in models if m != default_model]
+        choices = [
+            questionary.Choice(
+                f"{model} (from .env)" if model == default_model else model,
+                value=model,
+            )
+            for model in models
+        ]
+        choices.append(questionary.Choice("Manual input", value="__manual__"))
+        choice = questionary.select(
+            f"Select your [{role_label}] LLM Engine:",
+            choices=choices,
+            instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
+            style=questionary.Style(
+                [
+                    ("selected", "fg:magenta noinherit"),
+                    ("highlighted", "fg:magenta noinherit"),
+                    ("pointer", "fg:magenta noinherit"),
+                ]
+            ),
+        ).ask()
+        if choice is None:
+            print("\nNo Ollama model selected. Exiting...")
+            exit(1)
+        if choice != "__manual__":
+            return choice
+
+    manual = questionary.text(
+        f"Enter your [{role_label}] Ollama model name:",
+        default=default_model or "",
+        validate=lambda x: len(x.strip()) > 0 or "Please enter a valid model name.",
+        style=questionary.Style(
+            [
+                ("text", "fg:green"),
+                ("highlighted", "noinherit"),
+            ]
+        ),
+    ).ask()
+
+    if not manual:
+        print("\nNo Ollama model provided. Exiting...")
+        exit(1)
+
+    return manual.strip()
+
+
+def update_env_file(updates: Dict[str, str], env_path: str = ".env") -> None:
+    """Update or append environment variables in a .env file."""
+    path = Path(env_path)
+    lines = []
+    if path.exists():
+        lines = path.read_text().splitlines()
+
+    updated_keys = set()
+    new_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            new_lines.append(line)
+            continue
+        key, _ = line.split("=", 1)
+        key = key.strip()
+        if key in updates:
+            new_lines.append(f"{key}={updates[key]}")
+            updated_keys.add(key)
+        else:
+            new_lines.append(line)
+
+    for key, value in updates.items():
+        if key not in updated_keys:
+            new_lines.append(f"{key}={value}")
+
+    path.write_text("\n".join(new_lines) + "\n")
