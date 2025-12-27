@@ -1,6 +1,8 @@
 from langchain_core.messages import AIMessage
 import time
 import json
+from tradingagents.dataflows.config import get_config
+from tradingagents.agents.utils.prompt_utils import limit_prompt_sections
 
 
 def create_bull_researcher(llm, memory):
@@ -8,6 +10,7 @@ def create_bull_researcher(llm, memory):
         investment_debate_state = state["investment_debate_state"]
         history = investment_debate_state.get("history", "")
         bull_history = investment_debate_state.get("bull_history", "")
+        full_history = history
 
         current_response = investment_debate_state.get("current_response", "")
         market_research_report = state["market_report"]
@@ -21,6 +24,28 @@ def create_bull_researcher(llm, memory):
         past_memory_str = ""
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
+
+        config = get_config()
+        prompt_sections = limit_prompt_sections(
+            config,
+            llm,
+            {
+                "market_research_report": market_research_report,
+                "sentiment_report": sentiment_report,
+                "news_report": news_report,
+                "fundamentals_report": fundamentals_report,
+                "history": history,
+                "current_response": current_response,
+                "past_memory_str": past_memory_str,
+            },
+        )
+        market_research_report = prompt_sections["market_research_report"]
+        sentiment_report = prompt_sections["sentiment_report"]
+        news_report = prompt_sections["news_report"]
+        fundamentals_report = prompt_sections["fundamentals_report"]
+        history = prompt_sections["history"]
+        current_response = prompt_sections["current_response"]
+        past_memory_str = prompt_sections["past_memory_str"]
 
         prompt = f"""You are a Bull Analyst advocating for investing in the stock. Your task is to build a strong, evidence-based case emphasizing growth potential, competitive advantages, and positive market indicators. Leverage the provided research and data to address concerns and counter bearish arguments effectively.
 
@@ -47,7 +72,7 @@ Use this information to deliver a compelling bull argument, refute the bear's co
         argument = f"Bull Analyst: {response.content}"
 
         new_investment_debate_state = {
-            "history": history + "\n" + argument,
+            "history": full_history + "\n" + argument,
             "bull_history": bull_history + "\n" + argument,
             "bear_history": investment_debate_state.get("bear_history", ""),
             "current_response": argument,
