@@ -2,6 +2,42 @@ from openai import OpenAI
 from .config import get_config
 
 
+def _extract_response_text(response):
+    output_text = getattr(response, "output_text", None)
+    if output_text:
+        return output_text
+
+    texts = []
+    output = getattr(response, "output", None)
+    if isinstance(output, list):
+        for item in output:
+            item_content = item.get("content") if isinstance(item, dict) else getattr(item, "content", None)
+            if item_content:
+                for content_item in item_content:
+                    text = content_item.get("text") if isinstance(content_item, dict) else getattr(content_item, "text", None)
+                    if text:
+                        texts.append(text)
+                continue
+            text = item.get("text") if isinstance(item, dict) else getattr(item, "text", None)
+            if text:
+                texts.append(text)
+
+    if texts:
+        return "\n".join(texts).strip()
+
+    raise RuntimeError("OpenAI response did not include output text")
+
+
+def _use_legacy_openai_output(config):
+    return config.get("llm_provider", "").lower() == "openai"
+
+
+def _select_response_text(response, config):
+    if _use_legacy_openai_output(config):
+        return response.output[1].content[0].text
+    return _extract_response_text(response)
+
+
 def get_stock_news_openai(query, start_date, end_date):
     config = get_config()
     client = OpenAI(base_url=config["backend_url"])
@@ -34,7 +70,7 @@ def get_stock_news_openai(query, start_date, end_date):
         store=True,
     )
 
-    return response.output[1].content[0].text
+    return _select_response_text(response, config)
 
 
 def get_global_news_openai(curr_date, look_back_days=7, limit=5):
@@ -69,7 +105,7 @@ def get_global_news_openai(curr_date, look_back_days=7, limit=5):
         store=True,
     )
 
-    return response.output[1].content[0].text
+    return _select_response_text(response, config)
 
 
 def get_fundamentals_openai(ticker, curr_date):
@@ -104,4 +140,4 @@ def get_fundamentals_openai(ticker, curr_date):
         store=True,
     )
 
-    return response.output[1].content[0].text
+    return _select_response_text(response, config)
