@@ -47,6 +47,9 @@
 
 </div>
 
+## Fork Notes
+This fork adds basic local Ollama support (CLI selection, `.env` defaults, prompt/embedding handling).
+
 ## TradingAgents Framework
 
 TradingAgents is a multi-agent trading framework that mirrors the dynamics of real-world trading firms. By deploying specialized LLM-powered agents: from fundamental analysts, sentiment experts, and technical analysts, to trader, risk management team, the platform collaboratively evaluates market conditions and informs trading decisions. Moreover, these agents engage in dynamic discussions to pinpoint the optimal strategy.
