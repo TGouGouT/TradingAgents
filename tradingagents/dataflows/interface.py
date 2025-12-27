@@ -1,4 +1,5 @@
 from typing import Annotated
+import os
 
 # Import from vendor-specific modules
 from .local import get_YFin_data, get_finnhub_news, get_finnhub_company_insider_sentiment, get_finnhub_company_insider_transactions, get_simfin_balance_sheet, get_simfin_cashflow, get_simfin_income_statements, get_reddit_global_news, get_reddit_company_news
@@ -140,11 +141,16 @@ def get_vendor(category: str, method: str = None) -> str:
 
 def route_to_vendor(method: str, *args, **kwargs):
     """Route method calls to appropriate vendor implementation with fallback support."""
+    config = get_config()
+    llm_provider = config.get("llm_provider", "").lower()
+    data_dir = config.get("data_dir")
     category = get_category_for_method(method)
     vendor_config = get_vendor(category, method)
 
     # Handle comma-separated vendors
     primary_vendors = [v.strip() for v in vendor_config.split(',')]
+    if llm_provider == "ollama":
+        primary_vendors = [v for v in primary_vendors if v != "openai"]
 
     if method not in VENDOR_METHODS:
         raise ValueError(f"Method '{method}' not supported")
@@ -157,6 +163,8 @@ def route_to_vendor(method: str, *args, **kwargs):
     for vendor in all_available_vendors:
         if vendor not in fallback_vendors:
             fallback_vendors.append(vendor)
+    if llm_provider == "ollama":
+        fallback_vendors = [v for v in fallback_vendors if v != "openai"]
 
     # Debug: Print fallback ordering
     primary_str = " → ".join(primary_vendors)
@@ -170,6 +178,10 @@ def route_to_vendor(method: str, *args, **kwargs):
     successful_vendor = None
 
     for vendor in fallback_vendors:
+        if vendor == "local" and method == "get_global_news":
+            if not data_dir or not os.path.exists(data_dir):
+                print("INFO: Local data directory not found for global news, skipping local vendor")
+                continue
         if vendor not in VENDOR_METHODS[method]:
             if vendor in primary_vendors:
                 print(f"INFO: Vendor '{vendor}' not supported for method '{method}', falling back to next vendor")
@@ -232,6 +244,8 @@ def route_to_vendor(method: str, *args, **kwargs):
     # Final result summary
     if not results:
         print(f"FAILURE: All {vendor_attempt_count} vendor attempts failed for method '{method}'")
+        if llm_provider == "ollama" and method == "get_global_news":
+            return "Global news unavailable: no configured data source succeeded."
         raise RuntimeError(f"All vendor implementations failed for method '{method}'")
     else:
         print(f"FINAL: Method '{method}' completed with {len(results)} result(s) from {vendor_attempt_count} vendor attempt(s)")
