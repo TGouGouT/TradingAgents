@@ -114,7 +114,7 @@ pip install -r requirements.txt
 
 ### Required APIs
 
-You will need the OpenAI API for all the agents, and [Alpha Vantage API](https://www.alphavantage.co/support/#api-key) for fundamental and news data (default configuration).
+By default, the agents use OpenAI models, and [Alpha Vantage API](https://www.alphavantage.co/support/#api-key) for fundamental and news data (default configuration). If you prefer to run LLMs locally, you can switch the provider to Ollama and keep Alpha Vantage for data.
 
 ```bash
 export OPENAI_API_KEY=$YOUR_OPENAI_API_KEY
@@ -126,6 +126,31 @@ Alternatively, you can create a `.env` file in the project root with your API ke
 cp .env.example .env
 # Edit .env with your actual API keys
 ```
+
+To use Ollama locally:
+```bash
+ollama serve
+ollama pull llama3.1
+ollama pull nomic-embed-text
+```
+Then select `Ollama` in the CLI, or set config values directly:
+```python
+config["llm_provider"] = "ollama"
+config["backend_url"] = "http://localhost:11434/v1"
+config["quick_think_llm"] = "llama3.1"
+config["deep_think_llm"] = "qwen3"
+```
+You can also manage these via `.env`:
+```bash
+TRADINGAGENTS_LLM_PROVIDER=ollama
+TRADINGAGENTS_BACKEND_URL=http://localhost:11434/v1
+TRADINGAGENTS_QUICK_THINK_LLM=llama3.1
+TRADINGAGENTS_DEEP_THINK_LLM=qwen3
+TRADINGAGENTS_EMBEDDING_MODEL=nomic-embed-text
+TRADINGAGENTS_EMBEDDING_MAX_CHARS=8000
+```
+CLI selections override `.env` values at runtime.
+When using Ollama, keep `data_vendors` for news/fundamentals on `alpha_vantage`, `google`, or `local` (OpenAI web search tools require OpenAI).
 
 **Note:** We are happy to partner with Alpha Vantage to provide robust API support for TradingAgents. You can get a free AlphaVantage API [here](https://www.alphavantage.co/support/#api-key), TradingAgents-sourced requests also have increased rate limits to 60 requests per minute with no daily limits. Typically the quota is sufficient for performing complex tasks with TradingAgents thanks to Alpha Vantage’s open-source support program. If you prefer to use OpenAI for these data sources instead, you can modify the data vendor settings in `tradingagents/default_config.py`.
 
