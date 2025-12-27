@@ -1,5 +1,31 @@
 import os
 
+_LLM_PROVIDER = os.getenv("TRADINGAGENTS_LLM_PROVIDER", "openai").lower()
+_DEFAULT_BACKEND_URLS = {
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/",
+    "google": "https://generativelanguage.googleapis.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "ollama": "http://localhost:11434/v1",
+}
+_BACKEND_URL = os.getenv("TRADINGAGENTS_BACKEND_URL") or _DEFAULT_BACKEND_URLS.get(
+    _LLM_PROVIDER, "https://api.openai.com/v1"
+)
+_DEFAULT_QUICK_LLM = "gpt-4o-mini"
+_DEFAULT_DEEP_LLM = "o4-mini"
+_DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+_DEFAULT_EMBEDDING_MAX_CHARS = 8000
+if _LLM_PROVIDER == "ollama":
+    _DEFAULT_QUICK_LLM = "llama3.1"
+    _DEFAULT_DEEP_LLM = "qwen3"
+    _DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
+_QUICK_THINK_LLM = os.getenv("TRADINGAGENTS_QUICK_THINK_LLM", _DEFAULT_QUICK_LLM)
+_DEEP_THINK_LLM = os.getenv("TRADINGAGENTS_DEEP_THINK_LLM", _DEFAULT_DEEP_LLM)
+_EMBEDDING_MODEL = os.getenv("TRADINGAGENTS_EMBEDDING_MODEL", _DEFAULT_EMBEDDING_MODEL)
+_EMBEDDING_MAX_CHARS = int(
+    os.getenv("TRADINGAGENTS_EMBEDDING_MAX_CHARS", _DEFAULT_EMBEDDING_MAX_CHARS)
+)
+
 DEFAULT_CONFIG = {
     "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
     "results_dir": os.getenv("TRADINGAGENTS_RESULTS_DIR", "./results"),
@@ -9,10 +35,12 @@ DEFAULT_CONFIG = {
         "dataflows/data_cache",
     ),
     # LLM settings
-    "llm_provider": "openai",
-    "deep_think_llm": "o4-mini",
-    "quick_think_llm": "gpt-4o-mini",
-    "backend_url": "https://api.openai.com/v1",
+    "llm_provider": _LLM_PROVIDER,
+    "deep_think_llm": _DEEP_THINK_LLM,
+    "quick_think_llm": _QUICK_THINK_LLM,
+    "backend_url": _BACKEND_URL,
+    "embedding_model": _EMBEDDING_MODEL,
+    "embedding_max_chars": _EMBEDDING_MAX_CHARS,
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
